@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="assets/logo.jpg" alt="Logo" width="20%">
+</div>
+
 # x402-facilitator
 
 > The first x402 facilitator implementation for Monad blockchain, built with Rust, with additional support for Solana blockhain.
