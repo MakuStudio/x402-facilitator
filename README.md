@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="assets/logo.jpg" alt="Logo" width="20%">
+  <img src="assets/logo.png" alt="Logo" width="20%">
 </div>
 
 # x402-facilitator

@@ -4,11 +4,11 @@ version = "0.1.0"
 authors = ["Alex <albatroner@proton.me>"]
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/Namo-Labs/x402-facilitator"
+repository = "https://github.com/MakuStudio/x402-facilitator"
 description = "x402 facilitator for Monad and Solana network"
 readme = "README.md"
-homepage = "https://namolabs.net/facilitator"
-documentation = "https://namolabs.net/facilitator/docs"
+homepage = "https://makustudio.net/facilitator"
+documentation = "https://makustudio.net/facilitator"
 keywords = ["blockchain", "payments", "x402", "stablecoin", "http-402", "monad", "solana"]
 categories = ["cryptography", "finance", "network-programming", "web-programming::http-server"]
 
