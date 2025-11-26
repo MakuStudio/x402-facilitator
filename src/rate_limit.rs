@@ -78,22 +78,22 @@ impl RateLimitConfig {
 
     /// Create a rate limit layer for verification endpoints.
     pub fn verify_layer(&self) -> RateLimitLayer {
-        RateLimitLayer::new(self.verify_per_minute, Duration::from_secs(60))
+        RateLimitLayer::new(self.verify_per_minute as u64, Duration::from_secs(60))
     }
 
     /// Create a rate limit layer for settlement endpoints.
     pub fn settle_layer(&self) -> RateLimitLayer {
-        RateLimitLayer::new(self.settle_per_minute, Duration::from_secs(60))
+        RateLimitLayer::new(self.settle_per_minute as u64, Duration::from_secs(60))
     }
 
     /// Create a rate limit layer for transaction status endpoints.
     pub fn transaction_status_layer(&self) -> RateLimitLayer {
-        RateLimitLayer::new(self.transaction_status_per_minute, Duration::from_secs(60))
+        RateLimitLayer::new(self.transaction_status_per_minute as u64, Duration::from_secs(60))
     }
 
     /// Create a rate limit layer for general endpoints.
     pub fn general_layer(&self) -> RateLimitLayer {
-        RateLimitLayer::new(self.general_per_minute, Duration::from_secs(60))
+        RateLimitLayer::new(self.general_per_minute as u64, Duration::from_secs(60))
     }
 }
 
@@ -103,10 +103,10 @@ impl RateLimitConfig {
 /// in-memory rate limiter that tracks requests per IP address.
 pub fn create_rate_limited_service_builder(
     config: Option<&RateLimitConfig>,
-) -> ServiceBuilder<RateLimitLayer> {
+) -> ServiceBuilder<tower::layer::util::Stack<RateLimitLayer, tower::layer::util::Identity>> {
     let limit = config
-        .map(|c| c.general_per_minute)
-        .unwrap_or(u32::MAX);
+        .map(|c| c.general_per_minute as u64)
+        .unwrap_or(u32::MAX as u64);
     
     ServiceBuilder::new().layer(RateLimitLayer::new(limit, Duration::from_secs(60)))
 }

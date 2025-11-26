@@ -35,6 +35,7 @@ use alloy::sol_types::{Eip712Domain, SolCall, SolStruct, eip712_domain};
 use alloy::{hex, sol};
 use async_trait::async_trait;
 use dashmap::DashMap;
+use std::future::{Future, IntoFuture};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tokio::sync::Mutex;
@@ -701,7 +702,7 @@ impl crate::chain::TransactionStatusQuery for EvmProvider {
                     .await
                     .map_err(|e| FacilitatorLocalError::ContractCall(format!("{e:?}")))?;
 
-                let block_number = receipt.block_number.map(|bn| bn.to::<u64>());
+                let block_number = receipt.block_number;
                 let current_block_u64: u64 = current_block.into();
                 let confirmations = block_number
                     .map(|bn| current_block_u64.saturating_sub(bn))

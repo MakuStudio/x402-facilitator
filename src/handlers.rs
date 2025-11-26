@@ -210,7 +210,7 @@ where
 /// block number, confirmations, and any error information.
 ///
 /// The transaction hash can be in EVM format (0x-prefixed hex) or Solana format (base58).
-#[instrument(skip_all, err, fields(tx_hash = %tx_hash_str))]
+#[instrument(skip_all, fields(tx_hash = %tx_hash_str))]
 pub async fn get_transaction_status(
     State(facilitator): State<std::sync::Arc<FacilitatorLocal<ProviderCache>>>,
     Path(tx_hash_str): Path<String>,

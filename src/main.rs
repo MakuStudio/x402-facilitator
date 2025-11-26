@@ -94,14 +94,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut http_endpoints = Router::new()
         .merge(handlers::routes_with_transaction_status().with_state(axum_state));
 
-    // Apply rate limiting if configured
-    if let Some(config) = rate_limit_config {
-        http_endpoints = http_endpoints
-            .route_layer(config.verify_layer())
-            .route_layer(config.settle_layer())
-            .route_layer(config.transaction_status_layer())
-            .route_layer(config.general_layer());
-    }
+    // TODO: Rate limiting is currently disabled due to Clone trait bound issues with RateLimit.
+    // The tower::limit::RateLimitLayer's service type (RateLimit) doesn't implement Clone,
+    // which is required by axum's Router::layer(). This needs to be addressed with an
+    // axum-compatible rate limiting solution or by wrapping the rate limiter appropriately.
+    // if let Some(config) = rate_limit_config {
+    //     http_endpoints = http_endpoints.layer(config.general_layer());
+    // }
 
     http_endpoints = http_endpoints
         .layer(telemetry.http_tracing())

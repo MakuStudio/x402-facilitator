@@ -2,7 +2,7 @@
 name = "x402-facilitator"
 version = "0.1.0"
 authors = ["Alex <albatroner@proton.me>"]
-edition = "2024"
+edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/MakuStudio/x402-facilitator"
 description = "x402 facilitator for Monad and Solana network"
@@ -11,6 +11,13 @@ homepage = "https://makustudio.net/facilitator"
 documentation = "https://makustudio.net/facilitator"
 keywords = ["blockchain", "payments", "x402", "stablecoin", "http-402", "monad", "solana"]
 categories = ["cryptography", "finance", "network-programming", "web-programming::http-server"]
+exclude = [
+    "target/",
+    ".git/",
+    ".env",
+    "Dockerfile",
+    "*.png",
+]
 
 [dependencies]
 axum = { version = "0.8.4" }

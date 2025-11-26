@@ -733,7 +733,7 @@ impl TransactionStatusQuery for SolanaProvider {
                     max_supported_transaction_version: Some(0),
                 };
                 match self.rpc_client.get_transaction_with_config(&solana_sig, tx_config).await {
-                    Ok(Some(_)) => {
+                    Ok(_) => {
                         // Transaction exists but not finalized
                         Ok(TransactionStatusResponse {
                             transaction_hash: tx_hash.clone(),
@@ -744,7 +744,7 @@ impl TransactionStatusQuery for SolanaProvider {
                             error: None,
                         })
                     }
-                    Ok(None) | Err(_) => {
+                    Err(_) => {
                         // Transaction not found
                         Ok(TransactionStatusResponse {
                             transaction_hash: tx_hash.clone(),
