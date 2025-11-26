@@ -29,6 +29,7 @@ use tower_http::cors;
 
 use crate::facilitator_local::FacilitatorLocal;
 use crate::provider_cache::ProviderCache;
+use crate::rate_limit::RateLimitConfig;
 use crate::sig_down::SigDown;
 use crate::telemetry::Telemetry;
 
@@ -39,6 +40,7 @@ mod from_env;
 mod handlers;
 mod network;
 mod provider_cache;
+mod rate_limit;
 mod sig_down;
 mod telemetry;
 mod timestamp;
@@ -74,8 +76,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let facilitator = FacilitatorLocal::new(provider_cache);
     let axum_state = Arc::new(facilitator);
 
-    let http_endpoints = Router::new()
-        .merge(handlers::routes_with_transaction_status().with_state(axum_state))
+    // Load rate limiting configuration
+    let rate_limit_config = RateLimitConfig::from_env();
+    if let Some(ref config) = rate_limit_config {
+        tracing::info!(
+            verify_per_minute = config.verify_per_minute,
+            settle_per_minute = config.settle_per_minute,
+            transaction_status_per_minute = config.transaction_status_per_minute,
+            general_per_minute = config.general_per_minute,
+            "Rate limiting enabled"
+        );
+    } else {
+        tracing::info!("Rate limiting disabled");
+    }
+
+    // Build routes with rate limiting
+    let mut http_endpoints = Router::new()
+        .merge(handlers::routes_with_transaction_status().with_state(axum_state));
+
+    // Apply rate limiting if configured
+    if let Some(config) = rate_limit_config {
+        http_endpoints = http_endpoints
+            .route_layer(config.verify_layer())
+            .route_layer(config.settle_layer())
+            .route_layer(config.transaction_status_layer())
+            .route_layer(config.general_layer());
+    }
+
+    http_endpoints = http_endpoints
         .layer(telemetry.http_tracing())
         .layer(
             cors::CorsLayer::new()

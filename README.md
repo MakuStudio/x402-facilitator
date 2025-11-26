@@ -137,6 +137,37 @@ Available variables:
 * `RPC_URL_SOLANA`: RPC endpoint for Solana mainnet.
 * `RPC_URL_SOLANA_DEVNET`: RPC endpoint for Solana devnet.
 
+### Rate Limiting
+
+The facilitator includes configurable rate limiting to protect against abuse and DoS attacks. Rate limits are applied per IP address and can be configured separately for different endpoint types.
+
+Rate limiting is enabled by default with the following limits:
+- `/verify`: 60 requests per minute
+- `/settle`: 30 requests per minute
+- `/transaction/:tx_hash`: 120 requests per minute
+- Other endpoints (health, supported, etc.): 300 requests per minute
+
+To customize rate limits, set the following environment variables:
+
+```dotenv
+# Rate limiting configuration (requests per minute)
+RATE_LIMIT_VERIFY_PER_MINUTE=60
+RATE_LIMIT_SETTLE_PER_MINUTE=30
+RATE_LIMIT_TRANSACTION_STATUS_PER_MINUTE=120
+RATE_LIMIT_GENERAL_PER_MINUTE=300
+```
+
+To disable rate limiting entirely, set all rate limit values to `0`:
+
+```dotenv
+RATE_LIMIT_VERIFY_PER_MINUTE=0
+RATE_LIMIT_SETTLE_PER_MINUTE=0
+RATE_LIMIT_TRANSACTION_STATUS_PER_MINUTE=0
+RATE_LIMIT_GENERAL_PER_MINUTE=0
+```
+
+> ⚠️ **Warning:** Disabling rate limiting is not recommended for production deployments. Rate limiting helps protect your facilitator from abuse and ensures fair resource usage.
+
 
 ### Observability
 

@@ -19,6 +19,7 @@ tokio-util = { version = "0.7.16", features = ["rt"] }
 dotenvy = { version = "0.15.7" }
 serde_json = { version = "1.0.140" }
 tower-http = { version = "0.6.3", features = ["trace", "cors"] }
+tower = { version = "0.5", features = ["util", "limit"] }
 serde = { version = "1.0.219", features = ["derive"] }
 once_cell = { version = "1.21.3" }
 regex = { version = "1.11.1" }
