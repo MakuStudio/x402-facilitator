@@ -11,11 +11,12 @@
 
 use tracing::instrument;
 
-use crate::chain::FacilitatorLocalError;
+use crate::chain::{FacilitatorLocalError, TransactionStatusQuery};
 use crate::facilitator::Facilitator;
 use crate::provider_cache::ProviderMap;
 use crate::types::{
-    SettleRequest, SettleResponse, SupportedPaymentKindsResponse, VerifyRequest, VerifyResponse,
+    SettleRequest, SettleResponse, SupportedPaymentKindsResponse, TransactionHash,
+    TransactionStatusResponse, VerifyRequest, VerifyResponse,
 };
 
 /// A concrete [`Facilitator`] implementation that verifies and settles x402 payments
@@ -102,5 +103,55 @@ where
             kinds.append(&mut supported_kinds);
         }
         Ok(SupportedPaymentKindsResponse { kinds })
+    }
+}
+
+impl<A> FacilitatorLocal<A>
+where
+    A: ProviderMap + Sync,
+    A::Value: TransactionStatusQuery + Sync,
+{
+    /// Query the status of a transaction by its hash.
+    ///
+    /// This method tries all configured providers until one successfully returns the transaction status.
+    /// This is necessary because we cannot determine the network from the transaction hash alone.
+    #[instrument(skip_all, err, fields(tx_hash = %tx_hash))]
+    pub async fn get_transaction_status(
+        &self,
+        tx_hash: &TransactionHash,
+    ) -> Result<TransactionStatusResponse, FacilitatorLocalError> {
+        // Try each provider until one succeeds
+        for provider in self.provider_map.values() {
+            match provider.get_transaction_status(tx_hash).await {
+                Ok(status) if status.status != crate::types::TransactionStatus::NotFound => {
+                    return Ok(status);
+                }
+                Ok(_) => {
+                    // Transaction not found on this network, try next
+                    continue;
+                }
+                Err(e) => {
+                    // If it's a decoding error (wrong network type), continue
+                    // Otherwise, return the error
+                    if matches!(
+                        e,
+                        FacilitatorLocalError::DecodingError(_) | FacilitatorLocalError::ContractCall(_)
+                    ) {
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        // If we get here, transaction wasn't found on any network
+        Ok(TransactionStatusResponse {
+            transaction_hash: tx_hash.clone(),
+            status: crate::types::TransactionStatus::NotFound,
+            network: crate::network::Network::MonadTestnet, // Default, will be ignored
+            block_number: None,
+            confirmations: None,
+            error: Some("Transaction not found on any configured network".to_string()),
+        })
     }
 }

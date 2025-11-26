@@ -9,7 +9,7 @@
 //! Each endpoint consumes or produces structured JSON payloads defined in `x402-facilitator`,
 //! and is compatible with official x402 client SDKs.
 
-use axum::extract::State;
+use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::{get, post};
@@ -19,9 +19,11 @@ use tracing::instrument;
 
 use crate::chain::FacilitatorLocalError;
 use crate::facilitator::Facilitator;
+use crate::facilitator_local::FacilitatorLocal;
+use crate::provider_cache::ProviderCache;
 use crate::types::{
-    ErrorResponse, FacilitatorErrorReason, MixedAddress, SettleRequest, VerifyRequest,
-    VerifyResponse,
+    ErrorResponse, FacilitatorErrorReason, MixedAddress, SettleRequest, TransactionHash,
+    VerifyRequest, VerifyResponse,
 };
 
 /// `GET /verify`: Returns a machine-readable description of the `/verify` endpoint.
@@ -71,6 +73,46 @@ where
         .route("/settle", post(post_settle::<A>))
         .route("/health", get(get_health::<A>))
         .route("/supported", get(get_supported::<A>))
+}
+
+/// Routes specifically for FacilitatorLocal with transaction status support.
+pub fn routes_with_transaction_status() -> Router<std::sync::Arc<FacilitatorLocal<ProviderCache>>> {
+    Router::new()
+        .route("/", get(get_root))
+        .route("/verify", get(get_verify_info))
+        .route("/verify", post(post_verify_facilitator_local))
+        .route("/settle", get(get_settle_info))
+        .route("/settle", post(post_settle_facilitator_local))
+        .route("/health", get(get_health_facilitator_local))
+        .route("/supported", get(get_supported_facilitator_local))
+        .route("/transaction/:tx_hash", get(get_transaction_status))
+}
+
+/// Wrapper handlers for FacilitatorLocal<ProviderCache>
+async fn post_verify_facilitator_local(
+    State(facilitator): State<std::sync::Arc<FacilitatorLocal<ProviderCache>>>,
+    Json(body): Json<VerifyRequest>,
+) -> impl IntoResponse {
+    post_verify(State(facilitator), Json(body)).await
+}
+
+async fn post_settle_facilitator_local(
+    State(facilitator): State<std::sync::Arc<FacilitatorLocal<ProviderCache>>>,
+    Json(body): Json<SettleRequest>,
+) -> impl IntoResponse {
+    post_settle(State(facilitator), Json(body)).await
+}
+
+async fn get_health_facilitator_local(
+    State(facilitator): State<std::sync::Arc<FacilitatorLocal<ProviderCache>>>,
+) -> impl IntoResponse {
+    get_health(State(facilitator)).await
+}
+
+async fn get_supported_facilitator_local(
+    State(facilitator): State<std::sync::Arc<FacilitatorLocal<ProviderCache>>>,
+) -> impl IntoResponse {
+    get_supported(State(facilitator)).await
 }
 
 /// `GET /`: Returns a simple greeting message from the facilitator.
@@ -157,6 +199,56 @@ where
                 "Settlement failed"
             );
             error.into_response()
+        }
+    }
+}
+
+/// `GET /transaction/:tx_hash`: Query the status of a transaction by its hash.
+///
+/// This endpoint allows clients to check the status of a previously settled payment transaction.
+/// It returns the current status (pending, confirmed, failed, or not found), along with
+/// block number, confirmations, and any error information.
+///
+/// The transaction hash can be in EVM format (0x-prefixed hex) or Solana format (base58).
+#[instrument(skip_all, err, fields(tx_hash = %tx_hash_str))]
+pub async fn get_transaction_status(
+    State(facilitator): State<std::sync::Arc<FacilitatorLocal<ProviderCache>>>,
+    Path(tx_hash_str): Path<String>,
+) -> impl IntoResponse {
+    // Parse transaction hash from string using serde_json (which uses the Deserialize impl)
+    let tx_hash = match serde_json::from_str::<TransactionHash>(&format!("\"{}\"", tx_hash_str)) {
+        Ok(hash) => hash,
+        Err(e) => {
+            tracing::debug!(
+                error = %e,
+                tx_hash = %tx_hash_str,
+                "Failed to parse transaction hash"
+            );
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    error: format!("Invalid transaction hash format: {}. Expected EVM (0x-prefixed hex) or Solana (base58) format.", tx_hash_str),
+                }),
+            )
+                .into_response();
+        }
+    };
+
+    match facilitator.get_transaction_status(&tx_hash).await {
+        Ok(status) => (StatusCode::OK, Json(status)).into_response(),
+        Err(error) => {
+            tracing::warn!(
+                error = ?error,
+                tx_hash = %tx_hash_str,
+                "Failed to query transaction status"
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("Failed to query transaction status: {}", error),
+                }),
+            )
+                .into_response()
         }
     }
 }

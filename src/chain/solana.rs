@@ -12,14 +12,17 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing_core::Level;
 
-use crate::chain::{FacilitatorLocalError, FromEnvByNetworkBuild, NetworkProviderOps};
+use crate::chain::{
+    FacilitatorLocalError, FromEnvByNetworkBuild, NetworkProviderOps, TransactionStatusQuery,
+};
 use crate::facilitator::Facilitator;
 use crate::from_env;
 use crate::network::Network;
 use crate::types::{
     Base64Bytes, ExactPaymentPayload, FacilitatorErrorReason, MixedAddress, PaymentRequirements,
     SettleRequest, SettleResponse, SupportedPaymentKind, SupportedPaymentKindExtra,
-    SupportedPaymentKindsResponse, TokenAmount, TransactionHash, VerifyRequest, VerifyResponse,
+    SupportedPaymentKindsResponse, TokenAmount, TransactionHash, TransactionStatus,
+    TransactionStatusResponse, VerifyRequest, VerifyResponse,
 };
 use crate::types::{Scheme, X402Version};
 
@@ -657,6 +660,104 @@ impl Facilitator for SolanaProvider {
             }),
         }];
         Ok(SupportedPaymentKindsResponse { kinds })
+    }
+}
+
+impl TransactionStatusQuery for SolanaProvider {
+    async fn get_transaction_status(
+        &self,
+        tx_hash: &TransactionHash,
+    ) -> Result<TransactionStatusResponse, FacilitatorLocalError> {
+        let solana_sig = match tx_hash {
+            TransactionHash::Solana(sig) => Signature::try_from(sig.as_slice())
+                .map_err(|_| FacilitatorLocalError::DecodingError(
+                    "Invalid Solana signature format".to_string(),
+                ))?,
+            TransactionHash::Evm(_) => {
+                return Err(FacilitatorLocalError::DecodingError(
+                    "Transaction hash is for EVM, but provider is Solana".to_string(),
+                ));
+            }
+        };
+
+        let network = self.network();
+
+        // Query transaction status using get_signature_statuses
+        let statuses = self
+            .rpc_client
+            .get_signature_statuses(&[solana_sig])
+            .await
+            .map_err(|e| FacilitatorLocalError::ContractCall(format!("{e}")))?;
+
+        let status_opt = statuses.value.get(0).and_then(|s| s.as_ref());
+
+        match status_opt {
+            Some(status) => {
+                if let Some(err) = &status.err {
+                    // Transaction failed
+                    Ok(TransactionStatusResponse {
+                        transaction_hash: tx_hash.clone(),
+                        status: TransactionStatus::Failed,
+                        network,
+                        block_number: Some(status.slot as u64),
+                        confirmations: None, // Solana doesn't use confirmations the same way
+                        error: Some(format!("{err:?}")),
+                    })
+                } else {
+                    // Transaction confirmed
+                    // Get current slot to calculate confirmations
+                    let current_slot = self
+                        .rpc_client
+                        .get_slot()
+                        .await
+                        .map_err(|e| FacilitatorLocalError::ContractCall(format!("{e}")))?;
+
+                    let confirmations = current_slot.saturating_sub(status.slot);
+
+                    Ok(TransactionStatusResponse {
+                        transaction_hash: tx_hash.clone(),
+                        status: TransactionStatus::Confirmed,
+                        network,
+                        block_number: Some(status.slot as u64),
+                        confirmations: Some(confirmations as u64),
+                        error: None,
+                    })
+                }
+            }
+            None => {
+                // Transaction not found - could be pending or doesn't exist
+                // Try to get transaction to see if it exists but isn't finalized
+                let tx_config = solana_client::rpc_config::RpcTransactionConfig {
+                    encoding: None, // Use default encoding
+                    commitment: Some(CommitmentConfig::processed()),
+                    max_supported_transaction_version: Some(0),
+                };
+                match self.rpc_client.get_transaction_with_config(&solana_sig, tx_config).await {
+                    Ok(Some(_)) => {
+                        // Transaction exists but not finalized
+                        Ok(TransactionStatusResponse {
+                            transaction_hash: tx_hash.clone(),
+                            status: TransactionStatus::Pending,
+                            network,
+                            block_number: None,
+                            confirmations: None,
+                            error: None,
+                        })
+                    }
+                    Ok(None) | Err(_) => {
+                        // Transaction not found
+                        Ok(TransactionStatusResponse {
+                            transaction_hash: tx_hash.clone(),
+                            status: TransactionStatus::NotFound,
+                            network,
+                            block_number: None,
+                            confirmations: None,
+                            error: Some("Transaction not found".to_string()),
+                        })
+                    }
+                }
+            }
+        }
     }
 }
 

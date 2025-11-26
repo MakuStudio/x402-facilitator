@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let axum_state = Arc::new(facilitator);
 
     let http_endpoints = Router::new()
-        .merge(handlers::routes().with_state(axum_state))
+        .merge(handlers::routes_with_transaction_status().with_state(axum_state))
         .layer(telemetry.http_tracing())
         .layer(
             cors::CorsLayer::new()

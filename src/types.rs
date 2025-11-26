@@ -1437,3 +1437,38 @@ sol!(
         bytes32 nonce;
     }
 );
+
+/// Status of a blockchain transaction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TransactionStatus {
+    /// Transaction is pending in the mempool, not yet included in a block.
+    Pending,
+    /// Transaction has been included in a block and confirmed.
+    Confirmed,
+    /// Transaction failed or was reverted.
+    Failed,
+    /// Transaction not found (may have been dropped or invalid hash).
+    NotFound,
+}
+
+/// Response containing the status and details of a transaction.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionStatusResponse {
+    /// The transaction hash being queried.
+    pub transaction_hash: TransactionHash,
+    /// Current status of the transaction.
+    pub status: TransactionStatus,
+    /// Network where the transaction was submitted.
+    pub network: Network,
+    /// Block number where the transaction was included (if confirmed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub block_number: Option<u64>,
+    /// Number of confirmations (if confirmed).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confirmations: Option<u64>,
+    /// Error message if the transaction failed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}

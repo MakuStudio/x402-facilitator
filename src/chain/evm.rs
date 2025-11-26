@@ -41,7 +41,9 @@ use tokio::sync::Mutex;
 use tracing::{Instrument, instrument};
 use tracing_core::Level;
 
-use crate::chain::{FacilitatorLocalError, FromEnvByNetworkBuild, NetworkProviderOps};
+use crate::chain::{
+    FacilitatorLocalError, FromEnvByNetworkBuild, NetworkProviderOps, TransactionStatusQuery,
+};
 use crate::facilitator::Facilitator;
 use crate::from_env;
 use crate::network::{Network, USDCDeployment};
@@ -50,7 +52,8 @@ use crate::types::{
     EvmAddress, EvmSignature, ExactPaymentPayload, FacilitatorErrorReason, HexEncodedNonce,
     MixedAddress, PaymentPayload, PaymentRequirements, Scheme, SettleRequest, SettleResponse,
     SupportedPaymentKind, SupportedPaymentKindsResponse, TokenAmount, TransactionHash,
-    TransferWithAuthorization, VerifyRequest, VerifyResponse, X402Version,
+    TransactionStatus, TransactionStatusResponse, TransferWithAuthorization, VerifyRequest,
+    VerifyResponse, X402Version,
 };
 
 sol!(
@@ -660,6 +663,93 @@ where
             extra: None,
         }];
         Ok(SupportedPaymentKindsResponse { kinds })
+    }
+}
+
+impl crate::chain::TransactionStatusQuery for EvmProvider {
+    #[instrument(skip_all, err, fields(tx_hash = %tx_hash))]
+    async fn get_transaction_status(
+        &self,
+        tx_hash: &TransactionHash,
+    ) -> Result<TransactionStatusResponse, FacilitatorLocalError> {
+        let evm_hash = match tx_hash {
+            TransactionHash::Evm(hash) => {
+                alloy::primitives::TxHash::from(*hash)
+            }
+            TransactionHash::Solana(_) => {
+                return Err(FacilitatorLocalError::DecodingError(
+                    "Transaction hash is for Solana, but provider is EVM".to_string(),
+                ));
+            }
+        };
+
+        let network = self.chain().network();
+
+        // Try to get transaction receipt first (confirms it's mined)
+        match self.inner().get_transaction_receipt(evm_hash).await {
+            Ok(Some(receipt)) => {
+                let status = if receipt.status() {
+                    TransactionStatus::Confirmed
+                } else {
+                    TransactionStatus::Failed
+                };
+
+                // Get current block number to calculate confirmations
+                let current_block = self
+                    .inner()
+                    .get_block_number()
+                    .await
+                    .map_err(|e| FacilitatorLocalError::ContractCall(format!("{e:?}")))?;
+
+                let block_number = receipt.block_number.map(|bn| bn.to::<u64>());
+                let current_block_u64: u64 = current_block.into();
+                let confirmations = block_number
+                    .map(|bn| current_block_u64.saturating_sub(bn))
+                    .unwrap_or(0);
+
+                Ok(TransactionStatusResponse {
+                    transaction_hash: tx_hash.clone(),
+                    status,
+                    network,
+                    block_number,
+                    confirmations: Some(confirmations),
+                    error: if status == TransactionStatus::Failed {
+                        Some("Transaction reverted".to_string())
+                    } else {
+                        None
+                    },
+                })
+            }
+            Ok(None) => {
+                // No receipt yet, check if transaction exists in mempool
+                match self.inner().get_transaction_by_hash(evm_hash).await {
+                    Ok(Some(_)) => {
+                        // Transaction exists but not mined yet
+                        Ok(TransactionStatusResponse {
+                            transaction_hash: tx_hash.clone(),
+                            status: TransactionStatus::Pending,
+                            network,
+                            block_number: None,
+                            confirmations: None,
+                            error: None,
+                        })
+                    }
+                    Ok(None) => {
+                        // Transaction not found
+                        Ok(TransactionStatusResponse {
+                            transaction_hash: tx_hash.clone(),
+                            status: TransactionStatus::NotFound,
+                            network,
+                            block_number: None,
+                            confirmations: None,
+                            error: Some("Transaction not found".to_string()),
+                        })
+                    }
+                    Err(e) => Err(FacilitatorLocalError::ContractCall(format!("{e:?}"))),
+                }
+            }
+            Err(e) => Err(FacilitatorLocalError::ContractCall(format!("{e:?}"))),
+        }
     }
 }
 

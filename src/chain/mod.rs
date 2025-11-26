@@ -1,3 +1,4 @@
+use std::future::Future;
 use std::time::SystemTimeError;
 
 use crate::chain::evm::EvmProvider;
@@ -6,7 +7,7 @@ use crate::facilitator::Facilitator;
 use crate::network::{Network, NetworkFamily};
 use crate::types::{
     MixedAddress, Scheme, SettleRequest, SettleResponse, SupportedPaymentKindsResponse,
-    VerifyRequest, VerifyResponse,
+    TransactionHash, TransactionStatusResponse, VerifyRequest, VerifyResponse,
 };
 
 pub mod evm;
@@ -43,6 +44,15 @@ impl FromEnvByNetworkBuild for NetworkProvider {
 pub trait NetworkProviderOps {
     fn signer_address(&self) -> MixedAddress;
     fn network(&self) -> Network;
+}
+
+/// Trait for querying transaction status on-chain.
+pub trait TransactionStatusQuery {
+    /// Query the status of a transaction by its hash.
+    fn get_transaction_status(
+        &self,
+        tx_hash: &TransactionHash,
+    ) -> impl Future<Output = Result<TransactionStatusResponse, FacilitatorLocalError>> + Send;
 }
 
 impl NetworkProviderOps for NetworkProvider {
@@ -82,6 +92,18 @@ impl Facilitator for NetworkProvider {
         match self {
             NetworkProvider::Evm(provider) => provider.supported().await,
             NetworkProvider::Solana(provider) => provider.supported().await,
+        }
+    }
+}
+
+impl TransactionStatusQuery for NetworkProvider {
+    async fn get_transaction_status(
+        &self,
+        tx_hash: &TransactionHash,
+    ) -> Result<TransactionStatusResponse, FacilitatorLocalError> {
+        match self {
+            NetworkProvider::Evm(provider) => provider.get_transaction_status(tx_hash).await,
+            NetworkProvider::Solana(provider) => provider.get_transaction_status(tx_hash).await,
         }
     }
 }
